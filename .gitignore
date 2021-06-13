@@ -1,0 +1,10 @@
+esm
+*model*
+.idea
+cradle.iml
+*.ipynb*
+*model*
+*data*
+*T1019s2_out*
+/alphafold/alphafold_pytorch/model/
+/alphafold/data/
