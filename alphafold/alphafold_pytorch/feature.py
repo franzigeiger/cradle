@@ -27,7 +27,7 @@ def sequence_to_onehot(seq):
     for aa_index, aa_type in enumerate(seq):
         aa_id = mapping[aa_type]
         one_hot_arr[aa_index, aa_id] = 1
-
+    one_hot_arr = np.delete(one_hot_arr, one_hot_arr.shape[1] - 1, 1)
     return one_hot_arr
 
 def extract_hmm_profile(hhm_file, sequence, asterisks_replace=0.0):
@@ -158,6 +158,7 @@ def feature_generation(seq_file, out_file):
         if aln_file.exists():
             aln, _ = read_aln(aln_file)
         else:
+            print(f'Create .aln file for {domain}')
             aln, aln_id = read_aln(fas_file)
             aln = aln[:, aln[0] != '-']
             write_aln(aln, aln_id, aln_file)
@@ -169,34 +170,45 @@ def feature_generation(seq_file, out_file):
             pseudo_frob = np.float32(np.expand_dims(mat['pseudo_frob'], -1))
             pseudolikelihood = np.float32(mat['pseudolikelihood'])
         else:
-            pseudo_bias = np.zeros((L, 22), dtype=np.float32)
+            print(f'Create math sth file for {domain}')
+            pseudo_bias = np.zeros((L, 23), dtype=np.float32)
             pseudo_frob = np.zeros((L, L, 1), dtype=np.float32)
             pseudolikelihood = np.zeros((L, L, 484), dtype=np.float32)
 
         gap_count = np.float32(aln=='-')
         gap_matrix = np.expand_dims(np.matmul(gap_count.T, gap_count) / aln.shape[0], -1)
 
-        mapping = {aa: i for i, aa in enumerate('ARNDCQEGHILKMFPSTWYVX-')}
+        mapping = {aa: i for i, aa in enumerate('ARNDCQEGHILKMFPSTWYVXB-')}
         seq_weight = sequence_weights(aln)
-        hhblits_profile = np.zeros((L, 22), dtype=np.float32)
-        reweighted_profile = np.zeros((L, 22), dtype=np.float32)
+        hhblits_profile = np.zeros((L, 23), dtype=np.float32)
+        reweighted_profile = np.zeros((L, 23), dtype=np.float32)
         for i in range(L):
             for j in range(aln.shape[0]):
-                hhblits_profile[i, mapping[aln[j, i]]] += 1
-                reweighted_profile[i, mapping[aln[j, i]]] += seq_weight[j]
+                if aln[j,i] in mapping:
+                    hhblits_profile[i, mapping[aln[j, i]]] += 1
+                    reweighted_profile[i, mapping[aln[j, i]]] += seq_weight[j]
+                else:
+                    print(f'Aln {aln[j,i]}, aln row: {aln[:,i]}')
+        hhblits_profile = np.delete(hhblits_profile, hhblits_profile.shape[1] - 1, 1)
         hhblits_profile /= hhblits_profile.sum(-1).reshape(-1, 1)
+        reweighted_profile = np.delete(reweighted_profile, reweighted_profile.shape[1] - 1, 1)
         reweighted_profile /= reweighted_profile.sum(-1).reshape(-1, 1)
 
-        mapping = {aa: i for i, aa in enumerate('ARNDCQEGHILKMFPSTWYVX-')}
-        non_gapped_profile = np.zeros((L, 22), dtype=np.float32)
+        mapping = {aa: i for i, aa in enumerate('ARNDCQEGHILKMFPSTWYVXB-')}
+        non_gapped_profile = np.zeros((L, 23), dtype=np.float32)
         for i in range(L):
             for j in aln[:, i]:
-                non_gapped_profile[i, mapping[j]] += 1
+                if j in mapping:
+                    non_gapped_profile[i, mapping[j]] += 1
+                else:
+                    print(f'Aln {j}, aln row: {aln[:,i]}')
         non_gapped_profile[:, -1] = 0
+        # we delete the last two columns.
+        non_gapped_profile = np.delete(non_gapped_profile, non_gapped_profile.shape[1] - 1, 1)
         non_gapped_profile = np.delete(non_gapped_profile, non_gapped_profile.shape[1] - 1, 1)
         non_gapped_profile /= non_gapped_profile.sum(-1).reshape(-1, 1)
 
-        mapping = {aa: i for i, aa in enumerate('-ARNDCQEGHILKMFPSTWYVX')}
+        mapping = {aa: i for i, aa in enumerate('-ARNDCQEGHILKMFPSTWYVXB')}
         a2n = np.frompyfunc(lambda x: mapping[x], 1, 1)
         fi, fij, Meff = calculate_f(a2n(aln))
         MI = calculate_MI(fi, fij)
@@ -245,12 +257,32 @@ def feature_generation(seq_file, out_file):
             'profile_with_prior_without_gaps': np.zeros((L, 21), dtype=np.float32)
         }
         dataset.append(data)
-    
+    print(f'Write result to {out_file}')
     np.save(out_file, dataset, allow_pickle=True)
+
+def create_aln(seq_file):
+    target_line, *seq_line = seq_file.read_text().split('\n')
+    target = seq_file.stem
+    target_seq = ''.join(seq_line)
+    data_dir = seq_file.parent
+
+    for domain in utils.generate_domains(target, target_seq):
+        name = domain['name']
+        fas_file = data_dir / f'{name}.fas'
+        aln_file = data_dir / f'{name}.aln'
+
+        if not aln_file.exists():
+            print(f'Create ALN file {aln_file}')
+            aln, aln_id = read_aln(fas_file)
+            aln = aln[:, aln[0] != '-']
+            write_aln(aln, aln_id, aln_file)
+        else:
+            print(f'Aln file exists: {aln_file}')
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Alphafold - PyTorch version')
     parser.add_argument('-s', '--seq', type=str, required=True, help='target protein fasta file')
+    parser.add_argument('-a', '--aln', default=False, action='store_true', help='create aln files')
     parser.add_argument('-o', '--out', type=str, default=None, help='output file')
     parser.add_argument('-c', '--crop', default=False, action='store_true', help='make crops')
     parser.add_argument('-f', '--feature', default=False, action='store_true', help='make features')
@@ -259,6 +291,8 @@ if __name__ == '__main__':
     SEQ_FILE = Path(args.seq)
     if args.crop:
         make_crops(SEQ_FILE)
+    elif args.aln:
+        create_aln(SEQ_FILE)
     elif args.feature:
         OUT_FILE = args.out if args.out is not None else SEQ_FILE.parent / SEQ_FILE.stem
         feature_generation(SEQ_FILE, OUT_FILE)

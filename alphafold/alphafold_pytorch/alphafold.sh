@@ -1,9 +1,10 @@
 #!/bin/bash
 
-TARGET="T1019s2"
-TARGET_FILE="test_data/${TARGET}.pkl"
+TARGET="$1"
+# Protein data base directory
+TARGET_FILE="/home/franzi/Projects/cradle/alphafold/proteins/$TARGET/$TARGET.npy"
 MODEL_DIR="model"
-OUTPUT_DIR="${TARGET}_out"
+OUTPUT_DIR="/home/franzi/Projects/cradle/alphafold/proteins/${TARGET}/${TARGET}_out"
 
 echo -e "Saving output to ${OUTPUT_DIR}/\n"
 
