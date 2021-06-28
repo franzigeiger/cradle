@@ -1,0 +1,9 @@
+**/data
+**/model
+**/test_output
+**/alphafold_venv
+*.pdb
+../proteins/T1019s2/folding/test
+**/test_hist
+*.fasta
+*.pickle
